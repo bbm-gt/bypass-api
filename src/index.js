@@ -1,97 +1,80 @@
-const ALLOWED_ORIGIN = "https://bypassaicheck.com";
-
-function corsHeaders(origin) {
-  return {
-    "Access-Control-Allow-Origin": origin,
-    "Access-Control-Allow-Methods": "POST, OPTIONS",
-    "Access-Control-Allow-Headers": "Content-Type",
-    "Access-Control-Max-Age": "86400",
-  };
-}
-
 export default {
-  async fetch(request) {
-    const origin = request.headers.get("Origin");
+  async fetch(request, env, ctx) {
+    const corsHeaders = {
+      "Access-Control-Allow-Origin": "https://bypassaicheck.com",
+      "Access-Control-Allow-Methods": "POST, OPTIONS",
+      "Access-Control-Allow-Headers": "Content-Type",
+    };
 
-    // CORS check — only allow requests from the approved origin
-    if (origin !== ALLOWED_ORIGIN) {
-      return new Response(JSON.stringify({ error: "Forbidden" }), {
-        status: 403,
-        headers: { "Content-Type": "application/json" },
-      });
-    }
-
-    // Handle preflight
     if (request.method === "OPTIONS") {
-      return new Response(null, {
-        status: 204,
-        headers: corsHeaders(origin),
-      });
+      return new Response(null, { headers: corsHeaders });
     }
 
-    // Method validation
     if (request.method !== "POST") {
-      return new Response(JSON.stringify({ error: "Method Not Allowed" }), {
-        status: 405,
-        headers: {
-          "Content-Type": "application/json",
-          ...corsHeaders(origin),
-        },
-      });
+      return new Response("Method Not Allowed", { status: 405, headers: corsHeaders });
     }
 
-    // Parse and validate input
-    let body;
     try {
-      body = await request.json();
-    } catch {
-      return new Response(JSON.stringify({ error: "Invalid JSON body" }), {
-        status: 400,
-        headers: {
-          "Content-Type": "application/json",
-          ...corsHeaders(origin),
-        },
-      });
-    }
+      const { text } = await request.json();
 
-    const text = body.text;
-    if (!text || typeof text !== "string") {
-      return new Response(JSON.stringify({ error: "Text is too short." }), {
-        status: 400,
-        headers: {
-          "Content-Type": "application/json",
-          ...corsHeaders(origin),
-        },
-      });
-    }
-
-    const wordCount = text.trim().split(/\s+/).length;
-    if (wordCount < 15) {
-      return new Response(JSON.stringify({ error: "Text is too short." }), {
-        status: 400,
-        headers: {
-          "Content-Type": "application/json",
-          ...corsHeaders(origin),
-        },
-      });
-    }
-
-    // Mock AI scoring
-    const simulatedScore = Math.floor(Math.random() * 40) + 60;
-
-    return new Response(
-      JSON.stringify({
-        status: "success",
-        aiScore: simulatedScore,
-        message: "Analysis complete",
-      }),
-      {
-        status: 200,
-        headers: {
-          "Content-Type": "application/json",
-          ...corsHeaders(origin),
-        },
+      if (!text || text.split(/\s+/).length < 15) {
+        return new Response(JSON.stringify({ error: "Text is too short." }), {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" }
+        });
       }
-    );
-  },
+
+      const aiResponse = await fetch("https://api.deepseek.com/chat/completions", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${env.AI_API_KEY}`
+        },
+        body: JSON.stringify({
+          model: "deepseek-chat",
+          response_format: { type: "json_object" },
+          messages: [
+            {
+              role: "system",
+              content: "You are a precise AI detection tool. Analyze the user's text and determine the probability it is AI-generated. You must return ONLY a JSON object with a single key 'aiScore' containing an integer from 0 to 100. Example: {\"aiScore\": 85}"
+            },
+            {
+              role: "user",
+              content: text
+            }
+          ],
+          temperature: 0.1
+        })
+      });
+
+      if (!aiResponse.ok) {
+        throw new Error(`DeepSeek API error: ${aiResponse.status}`);
+      }
+
+      const aiData = await aiResponse.json();
+      const content = aiData.choices[0].message.content;
+
+      let realScore = 50;
+      try {
+        const parsedResult = JSON.parse(content);
+        realScore = parsedResult.aiScore || 50;
+      } catch (e) {
+        console.error("JSON parse failed, model returned:", content);
+      }
+
+      return new Response(JSON.stringify({
+        status: "success",
+        aiScore: realScore,
+        message: "Analysis complete"
+      }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" }
+      });
+
+    } catch (error) {
+      return new Response(JSON.stringify({ error: "Server Processing Error" }), {
+        status: 500,
+        headers: { ...corsHeaders, "Content-Type": "application/json" }
+      });
+    }
+  }
 };
