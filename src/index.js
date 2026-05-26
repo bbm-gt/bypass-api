@@ -71,7 +71,8 @@ export default {
       });
 
     } catch (error) {
-      return new Response(JSON.stringify({ error: "Server Processing Error" }), {
+      console.error("Worker Crash Details:", error.stack || error);
+      return new Response(JSON.stringify({ error: error.message || "Server Processing Error" }), {
         status: 500,
         headers: { ...corsHeaders, "Content-Type": "application/json" }
       });
