@@ -48,7 +48,9 @@ export default {
       });
 
       if (!aiResponse.ok) {
-        throw new Error(`DeepSeek API error: ${aiResponse.status}`);
+        const errBody = await aiResponse.text();
+        const keyCheck = env.AI_API_KEY ? `PRESENT_LEN_${env.AI_API_KEY.length}` : "ABSENT_OR_BLANK";
+        throw new Error(`[DEBUG] CF Key Status: ${keyCheck} | HTTP Status: ${aiResponse.status} | Remote Reply: ${errBody}`);
       }
 
       const aiData = await aiResponse.json();
