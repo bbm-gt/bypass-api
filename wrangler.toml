@@ -1,3 +1,6 @@
 name = "bypass-api"
 main = "src/index.js"
 compatibility_date = "2024-05-26"
+
+[vars]
+keep_vars = true
